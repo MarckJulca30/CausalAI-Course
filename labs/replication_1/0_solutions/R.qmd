@@ -1,5 +1,5 @@
 ---
-jupyter: ir
+jupyter: python3
 ---
 
 
@@ -288,6 +288,7 @@ predict_values <- function(type_edu, sex_, model = MODEL, group = 'exp1') {
     filter(.data[[type_edu]] == 1)
   fiteed_md <- lm(model, data = ref_data)
   new_dat <- fiteed_md |> broom::augment() |> 
+    data |> 
     select(exp1, lwage, .fitted) |> 
     group_by(exp1) |> 
     summarise(
@@ -487,25 +488,6 @@ ggplot(result_arranged) +
 
 ```{r}
 
-rmse_lasso <- function(split_model, alpha = 0.1, recipe = rec) {
-  
-  train <- training(split_model)
-  test <- testing(split_model)
-  # model
-  lasso <- linear_reg(penalty = 0.1, mixture = alpha) |> #mixture = alpha 
-    set_engine('glmnet')
-  wf <- workflow() |> 
-    add_recipe(rec)
-  # fit
-  lasso_fit <- wf |> 
-    add_model(lasso) |> 
-    fit(data = train)
-  # mse
-  result <- lasso_fit |> augment(test) |> 
-    rmse(lwage, .pred) |> 
-    mutate(alpha = alpha)
-  return(result)
-}
 
 lasso <- linear_reg(penalty =0.1, mixture = result_arranged |> first() |> pull(alpha)) |> 
   set_engine('glmnet')
