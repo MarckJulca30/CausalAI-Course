@@ -1,0 +1,260 @@
+---
+title: "Lab2-Solutions"
+jupyter: python3
+---
+
+```{python}
+import pandas as pd, numpy as np
+import matplotlib.pyplot as plt
+import warnings
+import statsmodels.api as sm
+import statsmodels.formula.api as smf
+
+warnings.filterwarnings("ignore")
+
+colors_palete = ["blue", "red"]
+
+
+```
+
+
+# RCT
+
+## Focus on treatment group 2
+
+```{python}
+data_raw = "https://raw.githubusercontent.com/alexanderquispe/CausalAI-Course/main/data/penn_jae.csv"
+data = pd.read_csv(data_raw)
+# data['dep'] = data['dep'].astype('category')
+
+# filter
+data_f = data[(data["tg"] == 2) | (data["tg"] == 0)]
+data_f["t2"] = data_f["tg"].replace({2: 1, 0: 0})
+data_f["tg"] = data_f["t2"]
+```
+
+## Plot 2 histograms
+
+```{python}
+fig, ax = plt.subplots(1, 2, sharey=True)
+inuidur = 'inuidur1'
+for i in [0, 1]:
+    _ref_data = data_f.query("t2 == @i").dropna()
+    ax[i].hist(
+        _ref_data[inuidur], bins = 30, color = colors_palete[i],
+        )
+```
+
+
+
+
+## Run all spec:
+
+### CL
+
+```{python}
+_treatment = data_f.query("t2 == 1")[inuidur]
+_control = data_f.query("t2 == 0")[inuidur]
+
+t_v, p_v, _ = sm.stats.ttest_ind(_treatment, _control) 
+print(f"t-statistic: \t{t_v}\np_value: \t{p_v}")
+
+cl_md = smf.ols(f"{inuidur} ~ t2", data = data_f).fit()
+# cl_md.summary()
+
+```
+
+### CRA
+
+```{python}
+fml_cra = '''
+np.log(inuidur1) ~ t2 + (female + black + othrace + C(dep) + q2 + q3 + q4 + q5 + q6 + agelt35 + agegt54 + durable + lusd + husd)**2
+'''
+
+
+cra_md = smf.ols(fml_cra, data = data_f).fit()
+# cra_md.summary()
+```
+
+
+### IRA
+
+```{python}
+fml_ira = """
+np.log(inuidur1) ~ t2 + t2*((female+black+othrace+C(dep)+q2+q3+q4+q5+q6+agelt35+agegt54+durable+lusd+husd)**2)+(female+black+othrace+C(dep)+q2+q3+q4+q5+q6+agelt35+agegt54+durable+lusd+husd)**2
+"""
+
+ira_md = smf.ols(fml_ira, data=data_f).fit()
+# ira_md.summary()
+```
+
+### IRA - Lasso (hdm)
+
+```{python}
+# | eval: false
+
+import hdmpy, pyreadr
+
+x_vars_data = "../../../data/rlasso_ira_reg_g2.RData"
+result = pyreadr.read_r(x_vars_data)
+x_vars = result["S"]
+
+y = np.log(data_f[inuidur])
+lasso = hdmpy.rlassoEffects(x_vars, y, index=0)
+# print(lasso)
+res = lasso.res
+lasso_result = pd.DataFrame({"coef": [res["coefficients"][0]], "se": [res["se"][0]]})
+# lasso_result
+```
+
+### IRA - plot coef 
+
+<!-- t2*female, t2_black, t2 agelt35, t2factor(dep)1 -->
+<!-- Explanations -->
+
+```{python}
+ref = ["t2:female", "t2:black", 't2:agelt35', "t2:C(dep)[T.1]"]
+coef_df = (ira_md.summary2().tables[1]).query('index in @ref')
+new_names = ['coef', 'se', 't', 'p', 'll', 'uu']
+coef_df.columns = new_names
+coef_df = coef_df.sort_values('coef')
+coef_df
+```
+
+```{python}
+labels = coef_df.index
+plt.scatter( labels, coef_df.coef, color = colors_palete[0])
+for label in labels:
+    _coef = coef_df.query('index == @label')
+    lluu = [_coef['ll'][0], _coef['uu'][0]]
+    plt.plot(
+        [label, label],
+        lluu, color = colors_palete[0]
+    )
+```
+
+
+# Good and Bad Controls
+
+```{python}
+from statsmodels.iolib.summary2 import summary_col
+np.random.seed(222)
+
+n = 1000  # sample size
+z = np.random.normal(0, 1, 1000).reshape((1000, 1))
+x = np.random.randint(1, 5) * z + np.random.normal(0, 1, 1000).reshape((1000, 1))
+
+y = (
+    np.random.randint(1, 7) * x
+    + 1.5 * y
+    + np.random.normal(0, 1, 1000).reshape((1000, 1))
+)
+
+rnd_df = pd.DataFrame({"x": x.flatten(), "y": y.flatten(), "z": z.flatten()})
+rnd_df.head()
+
+```
+
+## Model 1
+
+```{python}
+m1_wrong = smf.ols("y ~ x", data = rnd_df).fit()
+m1_correct = smf.ols("y ~ x + z", data=rnd_df).fit()
+
+summary_col([m1_wrong, m1_correct])
+```
+
+
+## Model 3
+
+
+```{python}
+U = np.random.normal(0, 1, 1000).reshape((1000, 1))
+Z = 8*U + np.random.normal(0, 1, 1000).reshape((1000, 1)) # generate Z
+X = 0.5*U + np.random.normal(0, 1, 1000).reshape((1000, 1))
+Y = X + 1*Z + np.random.normal(0, 1, 1000).reshape((1000, 1))
+
+# Create dataframe
+D = np.hstack((U, Z, X, Y))
+data = pd.DataFrame(D, columns = ["U", "Z", "X", "Y"])
+
+
+no_control = "Y ~ X"           #Wrong, not controlling for confounder
+using_control = "Y ~ X + Z"      #classical
+
+no_control = smf.ols(no_control , data=data).fit()
+using_control = smf.ols(using_control , data=data).fit()
+
+summary_col([no_control,using_control],stars=True)
+```
+
+
+## Model 4
+
+```{python}
+Z = np.random.normal(0, 1, 1000).reshape((1000, 1)) # generate Z
+X = 0.5*Z + np.random.normal(0, 1, 1000).reshape((1000, 1))
+M = 1.5*Z + 0.5*X + np.random.normal(0, 1, 1000).reshape((1000, 1))
+Y = 2*M + np.random.normal(0, 1, 1000).reshape((1000, 1)) #Efecto marginal de X en Y es 2.
+
+# Create dataframe
+D = np.hstack((Z, X, M, Y))
+data = pd.DataFrame(D, columns = ["Z", "X", "M", "Y"])
+
+no_control = "Y ~ X"           #Wrong, not controlling for confounder
+using_control = "Y ~ X + Z"      #classical
+using_m = "Y ~ X + Z + M"      #Wrong, adding M will yield the direct effect of M on Y,but we are interested in the effect of X. 
+
+no_control = smf.ols(no_control , data=data).fit()
+using_control = smf.ols(using_control , data=data).fit()
+using_m = smf.ols(using_m,data=data).fit() 
+
+summary_col([no_control,using_control,using_m],stars=True)
+```
+
+## Model 6
+
+```{python}
+U = np.random.normal(0, 1, 1000).reshape((1000, 1))
+Z = 2*U + np.random.normal(0, 1, 1000).reshape((1000, 1)) # generate Z
+X = 0.5*U + np.random.normal(0, 1, 1000).reshape((1000, 1))
+M = 1.5*Z + 0.5*X + np.random.normal(0, 1, 1000).reshape((1000, 1))
+Y = 2*M + np.random.normal(0, 1, 1000).reshape((1000, 1)) #Efecto marginal de X en Y es 2.
+
+# Create dataframe
+D = np.hstack((U, Z, X, M, Y))
+data = pd.DataFrame(D, columns = ["U","Z", "X", "M", "Y"])
+
+no_control = "Y ~ X"           #Wrong, not controlling for confounder
+using_control = "Y ~ X + Z"      #classical
+using_m = "Y ~ X + Z + M"      #Wrong, adding M will yield the direct effect of M on Y,but we are interested in the effect of X. 
+
+no_control = smf.ols(no_control , data=data).fit()
+using_control = smf.ols(using_control , data=data).fit()
+using_m = smf.ols(using_m,data=data).fit() 
+
+summary_col([no_control,using_control,using_m],stars=True)
+
+```
+
+## Model 7
+
+```{python}
+U_1 = np.random.normal(0, 1, 1000).reshape((1000, 1))
+U_2 = np.random.normal(0, 1, 1000).reshape((1000, 1))
+
+Z = (
+    0.5 * U_1 + 0.5 * U_2 + np.random.normal(0, 1, 1000).reshape((1000, 1))
+)  # generate Z
+X = 2 * U_1 + np.random.normal(0, 1, 1000).reshape((1000, 1))
+Y = X + 2 * U_2 + np.random.normal(0, 1, 1000).reshape((1000, 1))
+D = np.hstack((U_1, U_2, Z, X, Y))
+data = pd.DataFrame(D, columns=["U_1", "U_2", "Z", "X", "Y"])
+
+no_control = "Y ~ X"
+using_control = "Y ~ X + Z"  # classical
+
+no_control = smf.ols(no_control, data=data).fit()
+using_control = smf.ols(using_control, data=data).fit()
+summary_col([no_control, using_control], stars=True)
+```
