@@ -1,0 +1,18 @@
+--- 
+title: Julia
+jupyter: julia-1.10
+
+format: gfm
+---
+
+
+```{julia}
+#| error: true
+m = rand(0:99, 10, 9)
+
+m1 = m[:, 2] .- 2 .* m[:, 6] .+ 3 .* m[:, 8]
+
+mtrx = hcat(m, m1)
+
+inv_mtrx = inv(mtrx)
+```

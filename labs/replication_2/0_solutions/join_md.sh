@@ -1,0 +1,1 @@
+cat ./inverse/*.md > inv_cmp.md

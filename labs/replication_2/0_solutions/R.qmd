@@ -31,7 +31,7 @@ data_f <- data |>
 data_f |> 
   ggplot() +
   geom_histogram() +
-  aes(x = inuidur1) +
+  aes(x = inuidur1, fill = factor(tg)) +
   facet_wrap(~tg)
 
 ```
@@ -51,7 +51,7 @@ lm(fmla_cl, data = data_f) |> broom::tidy()
 ### CRA
 
 ```{r}
-fml_cra = log(inuidur1) ~ t2 + (female + black + othrace + C(dep) + q2 + q3 + q4 + q5 + q6 + agelt35 + agegt54 + durable + lusd + husd)**2
+fml_cra = log(inuidur1) ~ t2 + (female + black + othrace + factor(dep) + q2 + q3 + q4 + q5 + q6 + agelt35 + agegt54 + durable + lusd + husd)^2
 
 lm(fml_cra, data = data_f) |> broom::tidy()
 
@@ -61,7 +61,7 @@ lm(fml_cra, data = data_f) |> broom::tidy()
 ### IRA
 
 ```{r}
-fml_ira = log(inuidur1) ~ t2 + t2*((female+black+othrace+factor(dep)+q2+q3+q4+q5+q6+agelt35+agegt54+durable+lusd+husd)**2)+(female+black+othrace+factor(dep)+q2+q3+q4+q5+q6+agelt35+agegt54+durable+lusd+husd)^2
+fml_ira = log(inuidur1) ~ t2 + t2*((female+black+othrace+factor(dep)+q2+q3+q4+q5+q6+agelt35+agegt54+durable+lusd+husd)^2)+(female+black+othrace+factor(dep)+q2+q3+q4+q5+q6+agelt35+agegt54+durable+lusd+husd)^2
 
 ira_md <- lm(fml_ira, data=data_f) 
 ira_md_ci <- ira_md |> confint() |> as_tibble() |> rename(ll = 1, uu = 2)
